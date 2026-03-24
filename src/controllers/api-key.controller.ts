@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { ApiError } from "../lib/api-error";
 import { asyncHandler } from "../lib/async-handler";
+import * as auditService from "../services/audit.service";
 import * as apiKeyService from "../services/api-key.service";
 
 const createApiKeySchema = z.object({
@@ -21,6 +22,10 @@ function ensureAuth(req: Request) {
   }
 
   return req.auth;
+}
+
+function readIpAddress(req: Request) {
+  return req.ip || "unknown";
 }
 
 function serializeApiKey(apiKey: Awaited<ReturnType<typeof apiKeyService.createTenantApiKey>>["apiKey"]) {
@@ -47,24 +52,55 @@ export const createApiKey = asyncHandler(async (req: Request, res: Response) => 
     userId: payload.userId,
     expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null
   });
+  const apiKeySnapshot = serializeApiKey(result.apiKey);
+
+  await auditService.writeAuditLog({
+    auth,
+    action: "API_KEY_CREATED",
+    resourceType: "api_key",
+    resourceId: result.apiKey.id,
+    ipAddress: readIpAddress(req),
+    previousValue: null,
+    newValue: auditService.snapshotResource(apiKeySnapshot)
+  });
 
   res.status(201).json({
     rawKey: result.rawKey,
-    apiKey: serializeApiKey(result.apiKey)
+    apiKey: apiKeySnapshot
   });
 });
 
 export const rotateApiKey = asyncHandler(async (req: Request, res: Response) => {
   const auth = ensureAuth(req);
   const payload = rotateApiKeySchema.parse(req.body ?? {});
+  const previousApiKey = {
+    id: auth.apiKeyId,
+    name: auth.apiKeyName,
+    keyPrefix: auth.apiKeyPrefix,
+    gracePeriodActive: auth.gracePeriodActive
+  };
   const result = await apiKeyService.rotateCurrentApiKey(auth, {
     name: payload.name,
     expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null
+  });
+  const apiKeySnapshot = serializeApiKey(result.apiKey);
+
+  await auditService.writeAuditLog({
+    auth,
+    action: "API_KEY_ROTATED",
+    resourceType: "api_key",
+    resourceId: result.apiKey.id,
+    ipAddress: readIpAddress(req),
+    previousValue: auditService.snapshotResource(previousApiKey),
+    newValue: auditService.snapshotResource({
+      ...apiKeySnapshot,
+      graceExpiresAt: result.graceExpiresAt
+    })
   });
 
   res.status(201).json({
     rawKey: result.rawKey,
     graceExpiresAt: result.graceExpiresAt,
-    apiKey: serializeApiKey(result.apiKey)
+    apiKey: apiKeySnapshot
   });
 });
