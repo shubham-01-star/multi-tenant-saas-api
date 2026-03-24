@@ -1,11 +1,20 @@
 import prisma from "../config/db";
 
-export async function createTenant(name: string) {
+interface CreateTenantInput {
+  name: string;
+  slug: string;
+}
+
+export async function createTenant(data: CreateTenantInput) {
   return prisma.tenant.create({
-    data: { name }
+    data
   });
 }
 
 export async function getTenants() {
-  return prisma.tenant.findMany();
+  return prisma.tenant.findMany({
+    orderBy: {
+      createdAt: "desc"
+    }
+  });
 }

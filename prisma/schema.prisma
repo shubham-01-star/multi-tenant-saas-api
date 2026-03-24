@@ -1,42 +1,191 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  createdAt DateTime @default(now())
+enum UserRole {
+  OWNER
+  MEMBER
+}
 
-  users     User[]
-  apiKeys   ApiKey[]
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum EmailDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  DEAD_LETTER
+}
+
+enum RateLimitTier {
+  GLOBAL
+  ENDPOINT
+  BURST
+}
+
+model Tenant {
+  id                 String          @id @default(uuid())
+  name               String
+  slug               String          @unique
+  billingAnchorDate  DateTime        @default(now())
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  users              User[]
+  apiKeys            ApiKey[]
+  projects           Project[]
+  auditLogs          AuditLog[]
+  emailDeliveries    EmailDelivery[]
+  requestMetrics     RequestMetric[]
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String
-  role      String
-  tenantId  String
-  createdAt DateTime @default(now())
+  id                 String          @id @default(uuid())
+  tenantId           String
+  email              String
+  firstName          String
+  lastName           String
+  role               UserRole
+  status             UserStatus      @default(INVITED)
+  invitedAt          DateTime?
+  lastLoginAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant             Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  apiKeys            ApiKey[]
+  createdProjects    Project[]       @relation("ProjectCreatedBy")
+  auditLogs          AuditLog[]      @relation("AuditActor")
+
+  @@unique([tenantId, email])
+  @@index([tenantId, role])
+  @@index([tenantId, status])
 }
 
 model ApiKey {
-  id        String   @id @default(uuid())
-  hash      String
-  tenantId  String
-  createdAt DateTime @default(now())
-  expiresAt DateTime?
+  id                 String          @id @default(uuid())
+  tenantId           String
+  userId             String
+  name               String
+  keyPrefix          String          @unique
+  lastFour           String
+  hash               String
+  active             Boolean         @default(true)
+  expiresAt          DateTime?
+  revokedAt          DateTime?
+  graceExpiresAt     DateTime?
+  lastUsedAt         DateTime?
+  rotatedFromId      String?         @unique
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant             Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rotatedFrom        ApiKey?         @relation("ApiKeyRotation", fields: [rotatedFromId], references: [id])
+  rotatedTo          ApiKey?         @relation("ApiKeyRotation")
+  auditLogs          AuditLog[]
+  requestMetrics     RequestMetric[]
+
+  @@index([tenantId, userId])
+  @@index([tenantId, active])
+  @@index([tenantId, revokedAt])
+}
+
+model Project {
+  id                 String          @id @default(uuid())
+  tenantId           String
+  createdById        String
+  name               String
+  description        String?
+  status             ProjectStatus   @default(ACTIVE)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  tenant             Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy          User            @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  auditLogs          AuditLog[]      @relation("AuditProject")
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+}
+
+model AuditLog {
+  id                 String          @id @default(uuid())
+  tenantId           String
+  actorUserId        String?
+  apiKeyId           String?
+  projectId          String?
+  action             String
+  resourceType       String
+  resourceId         String
+  ipAddress          String
+  previousValue      Json?
+  newValue           Json?
+  metadata           Json?
+  previousHash       String?
+  chainHash          String
+  createdAt          DateTime        @default(now())
+
+  tenant             Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorUser          User?           @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  apiKey             ApiKey?         @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  project            Project?        @relation("AuditProject", fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, actorUserId, createdAt])
+  @@index([tenantId, action, createdAt])
+  @@index([tenantId, resourceType, createdAt])
+}
+
+model EmailDelivery {
+  id                 String               @id @default(uuid())
+  tenantId           String
+  recipient          String
+  template           String
+  status             EmailDeliveryStatus  @default(PENDING)
+  attemptCount       Int                  @default(0)
+  previewUrl         String?
+  failureReason      String?
+  queuedAt           DateTime             @default(now())
+  lastAttemptAt      DateTime?
+  sentAt             DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt])
+  @@index([recipient, createdAt])
+}
+
+model RequestMetric {
+  id                 String          @id @default(uuid())
+  tenantId           String
+  apiKeyId           String?
+  method             String
+  endpoint           String
+  statusCode         Int
+  responseTimeMs     Int
+  rateLimitBreached  Boolean         @default(false)
+  breachedTier       RateLimitTier?
+  createdAt          DateTime        @default(now())
+
+  tenant             Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  apiKey             ApiKey?         @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, endpoint, createdAt])
+  @@index([tenantId, rateLimitBreached, createdAt])
 }
