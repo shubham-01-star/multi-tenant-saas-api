@@ -1,10 +1,11 @@
 const DEFAULT_PORT = 3000;
+const DEFAULT_REDIS_URL = "redis://127.0.0.1:6379";
 
 function readRequiredEnv(name: "DATABASE_URL"): string {
   const value = process.env[name]?.trim();
 
   if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    throw new Error("Missing required environment variable: " + name);
   }
 
   return value;
@@ -28,5 +29,6 @@ export const env = {
   nodeEnv: process.env.NODE_ENV?.trim() || "development",
   port: readPort(process.env.PORT),
   databaseUrl: readRequiredEnv("DATABASE_URL"),
+  redisUrl: process.env.REDIS_URL?.trim() || DEFAULT_REDIS_URL,
   internalApiKey: process.env.INTERNAL_API_KEY?.trim() || null
 } as const;
