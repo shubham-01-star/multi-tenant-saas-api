@@ -4,6 +4,7 @@ import { ApiError } from "../lib/api-error";
 import { extractKeyPrefix, generateApiKey, hashApiKey, verifyApiKeyHash } from "../lib/api-key";
 import * as apiKeyRepository from "../repositories/api-key.repository";
 import * as userRepository from "../repositories/user.repository";
+import { enqueueTransactionalEmail } from "./email.service";
 import { AuthContext } from "../types/auth";
 
 interface CreateTenantApiKeyInput {
@@ -142,6 +143,18 @@ export async function rotateCurrentApiKey(auth: AuthContext, input: RotateTenant
       rotatedFromId: currentApiKey.id
     }
   );
+
+  await enqueueTransactionalEmail({
+    tenantId: auth.tenantId,
+    recipient: auth.email,
+    template: "API_KEY_ROTATED",
+    context: {
+      tenantName: auth.tenantName,
+      ownerEmail: auth.email,
+      keyName: rotatedKey.name,
+      graceExpiresAt: graceExpiresAt.toISOString()
+    }
+  });
 
   return {
     rawKey: generatedKey.rawKey,

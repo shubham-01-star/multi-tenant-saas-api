@@ -1,3 +1,4 @@
+import { UserRole } from "@prisma/client";
 import prisma from "../config/db";
 
 export async function findUserByTenantAndId(tenantId: string, userId: string) {
@@ -16,6 +17,18 @@ export async function findUserById(userId: string) {
     },
     include: {
       tenant: true
+    }
+  });
+}
+
+export async function findOwnerUsersByTenant(tenantId: string) {
+  return prisma.user.findMany({
+    where: {
+      tenantId,
+      role: UserRole.OWNER
+    },
+    orderBy: {
+      createdAt: "asc"
     }
   });
 }

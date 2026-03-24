@@ -1,4 +1,5 @@
 import { consumeSlidingWindow } from "../lib/rate-limit";
+import { maybeQueueRateLimitWarning } from "./rate-limit-warning.service";
 import { AuthContext } from "../types/auth";
 import { RateLimitDecision, RateLimitTier, RateLimitWindowResult } from "../types/rate-limit";
 
@@ -45,6 +46,8 @@ export async function evaluateRateLimit(input: EndpointRateLimitInput) {
       windowMs: GLOBAL_WINDOW_MS
     })
   );
+
+  await maybeQueueRateLimitWarning(input.auth, globalDecision.result.count);
 
   if (!globalDecision.allowed) {
     return {
