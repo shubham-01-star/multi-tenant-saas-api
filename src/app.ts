@@ -1,13 +1,11 @@
 import express from "express";
+import routes from "./routes";
 
 const app = express();
 
-// middleware
 app.use(express.json());
 
-// basic route
-app.get("/", (req, res) => {
-  res.json({ message: "API running" });
-});
+// register routes
+app.use("/", routes);
 
 export default app;
