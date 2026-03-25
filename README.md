@@ -144,25 +144,19 @@ npm install
 npm run prisma:generate
 ```
 
-### 4. Push schema to PostgreSQL
+### 4. Apply Prisma migrations
 
 ```bash
-npx prisma db push --config prisma.config.ts
+npm run prisma:migrate:deploy
 ```
 
-### 5. Apply append-only audit trigger
-
-```bash
-docker exec -i mt-saas-postgres psql -U postgres -d multitenant_saas -f - < prisma/migrations/20260324190000_audit_log_append_only/migration.sql
-```
-
-### 6. Seed sample data
+### 5. Seed sample data
 
 ```bash
 npm run seed
 ```
 
-### 7. Run API and worker
+### 6. Run API and worker
 
 Terminal 1:
 
@@ -182,8 +176,7 @@ The implementation was validated against an isolated Docker-backed setup:
 
 - PostgreSQL on port `5434`
 - Redis on port `6380`
-- schema sync completed
-- audit trigger applied
+- full migration chain applied successfully on a clean database
 - seed completed successfully
 - app and worker started successfully
 - `/`, `/health`, `/auth/me`, `/projects`, and `/users/invite` were smoke-tested
@@ -204,6 +197,7 @@ The seed script creates:
 ## Useful Commands
 
 ```bash
+npm run prisma:migrate:deploy
 npm run dev
 npm run worker
 npm run typecheck
@@ -219,11 +213,11 @@ API documentation is available in:
 
 ## Known Limitations
 
-- Prisma 7 currently required runtime adapter wiring with `@prisma/adapter-pg`, so schema bootstrap uses `prisma db push` plus the explicit audit SQL trigger step instead of a full generated migration stack for all models.
+- Prisma 7 still requires runtime adapter wiring with `@prisma/adapter-pg`, which adds a little extra setup complexity even though the schema itself is now tracked through migrations.
 - Integration tests focus on the two subtle areas requested by the assignment: sliding-window logic and audit-chain verification. Full HTTP integration coverage can be expanded further.
 - Rate-limit warning emails are throttled in Redis, but alert delivery history is not yet separately summarized in metrics beyond email delivery status.
 - Queue health currently reports pending and failed jobs; more detailed worker latency metrics could be added later.
 
 ## Explanation Field Draft
 
-The hardest problem was making the system feel truly tenant-safe while also keeping the code practical to extend. I avoided treating tenant isolation as only an authentication concern. Instead, the API key middleware resolves tenant context once, and every tenant-owned repository method requires that tenant ID as part of the query filter. That means the database lookup itself is scoped, so a Tenant A user never reaches Tenant B data and usually cannot even confirm whether a foreign resource exists. The second tricky area was the audit trail: the chain hash has to be deterministic, so I normalized JSON before hashing and linked each entry to the previous tenant hash. That made it possible to build a verification endpoint that can identify the first broken row. If I were doing one more pass, I would replace the current `db push` bootstrap with a more polished migration workflow tailored for Prisma 7 adapters, so local setup would be even smoother for reviewers.
+The hardest problem was making the system feel truly tenant-safe while also keeping the code practical to extend. I avoided treating tenant isolation as only an authentication concern. Instead, the API key middleware resolves tenant context once, and every tenant-owned repository method requires that tenant ID as part of the query filter. That means the database lookup itself is scoped, so a Tenant A user never reaches Tenant B data and usually cannot even confirm whether a foreign resource exists. The second tricky area was the audit trail: the chain hash has to be deterministic, so I normalized JSON before hashing and linked each entry to the previous tenant hash. That made it possible to build a verification endpoint that can identify the first broken row. If I were doing one more pass, I would add full end-to-end integration tests that run automatically against disposable Postgres and Redis containers, so operational confidence would be even higher.
