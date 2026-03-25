@@ -16,6 +16,10 @@ function applyRateLimitHeaders(res: Response, limit: number, remaining: number, 
 export function createRateLimitMiddleware(config: EndpointRateLimitConfig) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      req.rateLimit = {
+        breached: false
+      };
+
       if (!req.auth) {
         next();
         return;
@@ -45,6 +49,11 @@ export function createRateLimitMiddleware(config: EndpointRateLimitConfig) {
         next();
         return;
       }
+
+      req.rateLimit = {
+        breached: true,
+        tier: denied.tier
+      };
 
       res.setHeader("Retry-After", String(denied.result.resetAfterSeconds));
       res.status(429).json(
