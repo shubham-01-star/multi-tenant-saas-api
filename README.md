@@ -101,8 +101,8 @@ This trigger blocks `UPDATE` and `DELETE` on `AuditLog`.
 
 Internal endpoints are protected with a separate `INTERNAL_API_KEY`.
 
-- `GET /internal/health` checks DB, Redis, queue depth, and average response time over the last 60 seconds
-- `GET /internal/metrics` aggregates current billing-period usage per tenant
+- `GET /health` checks DB, Redis, queue depth, and average response time over the last 60 seconds
+- `GET /metrics` aggregates current billing-period usage per tenant
 
 ## Error Shape
 
@@ -186,7 +186,7 @@ The implementation was validated against an isolated Docker-backed setup:
 - audit trigger applied
 - seed completed successfully
 - app and worker started successfully
-- `/`, `/internal/health`, `/auth/me`, `/projects`, and `/users/invite` were smoke-tested
+- `/`, `/health`, `/auth/me`, `/projects`, and `/users/invite` were smoke-tested
 - queued invite email reached `SENT` state with an Ethereal preview URL
 
 ## Seed Output

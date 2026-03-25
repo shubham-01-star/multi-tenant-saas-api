@@ -370,7 +370,7 @@ paths:
       responses:
         '200':
           description: Integrity verification result
-  /internal/health:
+  /health:
     get:
       summary: Internal system health
       security:
@@ -378,7 +378,7 @@ paths:
       responses:
         '200':
           description: Health status
-  /internal/metrics:
+  /metrics:
     get:
       summary: Internal per-tenant billing period metrics
       security:

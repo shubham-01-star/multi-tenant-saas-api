@@ -4,7 +4,7 @@ import { emailDeadLetterQueue, emailQueue } from "../jobs/email.queue";
 import * as telemetryService from "./telemetry.service";
 
 export async function getSystemHealth() {
-  const databaseHealthy = await prisma.$queryRawUnsafe("SELECT 1").then(() => true).catch(() => false);
+  const databaseHealthy = await prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false);
   const redisHealthy = await getRedisClient().then((client) => client.ping()).then((value) => value === "PONG").catch(() => false);
   const emailQueueCounts = await emailQueue.getJobCounts("waiting", "failed");
   const deadLetterCounts = await emailDeadLetterQueue.getJobCounts("waiting", "failed");
