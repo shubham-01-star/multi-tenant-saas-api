@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: mt-saas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: multitenant_saas
+    ports:
+      - "5434:5432"
+    volumes:
+      - mt_saas_postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: mt-saas-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - mt_saas_redis_data:/data
+
+volumes:
+  mt_saas_postgres_data:
+  mt_saas_redis_data:

@@ -1,0 +1,388 @@
+openapi: 3.1.0
+info:
+  title: Multi-Tenant SaaS API
+  version: 1.0.0
+  description: |
+    Multi-tenant REST API with API key tenant resolution, sliding-window rate limiting,
+    BullMQ email delivery, tamper-evident audit logs, and protected internal endpoints.
+servers:
+  - url: http://127.0.0.1:3000
+components:
+  securitySchemes:
+    TenantApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+    InternalApiKey:
+      type: apiKey
+      in: header
+      name: x-internal-api-key
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+    AuthContext:
+      type: object
+      properties:
+        tenant:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            slug:
+              type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+            role:
+              type: string
+        apiKey:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            prefix:
+              type: string
+            gracePeriodActive:
+              type: boolean
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        createdById:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        invitedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ApiKeyRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        userId:
+          type: string
+        name:
+          type: string
+        keyPrefix:
+          type: string
+        lastFour:
+          type: string
+        active:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        graceExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+paths:
+  /:
+    get:
+      summary: API root
+      responses:
+        '200':
+          description: API is reachable
+  /auth/me:
+    get:
+      summary: Resolve current tenant and user context from API key
+      security:
+        - TenantApiKey: []
+      responses:
+        '200':
+          description: Authenticated tenant context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthContext'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api-keys:
+    post:
+      summary: Create a tenant API key
+      security:
+        - TenantApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                userId:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: API key created and raw key returned once
+        '403':
+          description: Owner permission required
+  /api-keys/rotate:
+    post:
+      summary: Rotate the current API key
+      security:
+        - TenantApiKey: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: New raw key returned and old key remains valid for 15 minutes
+  /projects:
+    get:
+      summary: List tenant projects
+      security:
+        - TenantApiKey: []
+      responses:
+        '200':
+          description: Tenant-scoped projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+    post:
+      summary: Create a project
+      security:
+        - TenantApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Project created
+  /projects/{projectId}:
+    get:
+      summary: Get a tenant-scoped project
+      security:
+        - TenantApiKey: []
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project found inside the current tenant
+    patch:
+      summary: Update a tenant-scoped project
+      security:
+        - TenantApiKey: []
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project updated
+    delete:
+      summary: Delete a project as owner
+      security:
+        - TenantApiKey: []
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Project deleted
+  /users:
+    get:
+      summary: List tenant users as owner
+      security:
+        - TenantApiKey: []
+      responses:
+        '200':
+          description: Tenant users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+  /users/invite:
+    post:
+      summary: Invite a user to the tenant
+      security:
+        - TenantApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, firstName, lastName, role]
+              properties:
+                email:
+                  type: string
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                role:
+                  type: string
+                  enum: [OWNER, MEMBER]
+      responses:
+        '201':
+          description: User invited and email queued
+  /audit:
+    get:
+      summary: Query tenant audit logs with filters and cursor pagination
+      security:
+        - TenantApiKey: []
+      parameters:
+        - in: query
+          name: actorUserId
+          schema:
+            type: string
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: resourceType
+          schema:
+            type: string
+        - in: query
+          name: dateFrom
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: dateTo
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Audit log page
+  /audit/verify:
+    get:
+      summary: Verify audit chain integrity for the current tenant
+      security:
+        - TenantApiKey: []
+      responses:
+        '200':
+          description: Integrity verification result
+  /internal/health:
+    get:
+      summary: Internal system health
+      security:
+        - InternalApiKey: []
+      responses:
+        '200':
+          description: Health status
+  /internal/metrics:
+    get:
+      summary: Internal per-tenant billing period metrics
+      security:
+        - InternalApiKey: []
+      responses:
+        '200':
+          description: Aggregated tenant usage metrics
