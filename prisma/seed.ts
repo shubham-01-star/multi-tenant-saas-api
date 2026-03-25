@@ -1,9 +1,22 @@
 import "dotenv/config";
+import { Prisma } from "@prisma/client";
 import prisma from "../src/config/db";
 import { getRedisClient } from "../src/config/redis";
 import { buildTenantSlug } from "../src/utils/slug";
 import { generateApiKey, hashApiKey } from "../src/lib/api-key";
 import { computeAuditHash } from "../src/lib/audit-hash";
+
+function toJsonValue(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return Prisma.JsonNull;
+  }
+
+  return value as Prisma.InputJsonValue;
+}
 
 async function resetDatabase() {
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "RequestMetric", "EmailDelivery", "AuditLog", "Project", "ApiKey", "User", "Tenant" RESTART IDENTITY CASCADE');
@@ -165,7 +178,12 @@ async function main() {
     const auditEntries = makeAuditEntries(tenant.id, owner.id, apiKey.id, 5);
     for (const entry of auditEntries) {
       await prisma.auditLog.create({
-        data: entry
+        data: {
+          ...entry,
+          previousValue: toJsonValue(entry.previousValue),
+          newValue: toJsonValue(entry.newValue),
+          metadata: toJsonValue(entry.metadata)
+        }
       });
     }
 
