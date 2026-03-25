@@ -1,7 +1,8 @@
-import { computeAuditHash } from "../lib/audit-hash";
 import * as auditRepository from "../repositories/audit.repository";
 import { AuthContext } from "../types/auth";
 import { stableStringify } from "../lib/stable-json";
+import { computeAuditHash } from "../lib/audit-hash";
+import { verifyAuditChainEntries } from "../lib/audit-chain";
 
 interface AuditWriteInput {
   auth: AuthContext;
@@ -100,45 +101,8 @@ export async function listAuditLogs(input: AuditQueryInput) {
 
 export async function verifyAuditChain(auth: AuthContext) {
   const rows = await auditRepository.listAllAuditLogsForTenant(auth.tenantId);
-  let previousHash: string | null = null;
 
-  for (const row of rows) {
-    const computedHash = computeAuditHash({
-      tenantId: row.tenantId,
-      actorUserId: row.actorUserId,
-      apiKeyId: row.apiKeyId,
-      action: row.action,
-      resourceType: row.resourceType,
-      resourceId: row.resourceId,
-      ipAddress: row.ipAddress,
-      previousValue: row.previousValue,
-      newValue: row.newValue,
-      metadata: row.metadata,
-      previousHash,
-      createdAt: row.createdAt.toISOString()
-    });
-
-    const samePreviousHash = row.previousHash === previousHash;
-    const sameChainHash = row.chainHash === computedHash;
-
-    if (!samePreviousHash || !sameChainHash) {
-      return {
-        valid: false,
-        brokenEntryId: row.id,
-        expectedHash: computedHash,
-        actualHash: row.chainHash,
-        previousHash,
-        storedPreviousHash: row.previousHash
-      };
-    }
-
-    previousHash = row.chainHash;
-  }
-
-  return {
-    valid: true,
-    brokenEntryId: null
-  };
+  return verifyAuditChainEntries(rows);
 }
 
 export function snapshotResource(value: unknown) {
